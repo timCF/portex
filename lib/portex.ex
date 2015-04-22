@@ -1,7 +1,5 @@
 defmodule Portex do
   use Application
-  require Exutils
-  require Logger
 
   # See http://elixir-lang.org/docs/stable/elixir/Application.html
   # for more information on OTP Applications
@@ -24,35 +22,10 @@ defmodule Portex do
 	#
 
 	def open(name, command) when (is_atom(name) and is_binary(command)) do 
-		true = :erlang.register(name, :erlang.open_port({:spawn, command}, [:binary]))
-		:ok
+		:ok = :supervisor.start_child(Portex.Supervisor, Supervisor.Spec.worker(Portex.Worker, [[name, command]], [id: name, restart: :permanent])) |> elem(0)
 	end
-	def exec(input, port, condition \\ fn(_) -> true end, ttl \\ 1000) when (is_binary(input) and is_atom(port) and is_function(condition, 1) and is_integer(ttl)) do 
-		exec_proc(input, port, condition, ttl) |> Exutils.safe
-	end
-
-	#
-	#	priv
-	#
-
-	defp exec_proc(input, port, condition, ttl) do
-		:erlang.port_command(port, input)
-		receive_ans(condition, ttl, [])
-	end
-	defp receive_ans(condition, ttl, res) do
-		receive do
-			{_ , {:data, bin}} when is_binary(bin) ->
-				case condition.(bin) do
-					true -> [bin|res]
-					false -> receive_ans(condition, ttl, res)
-				end
-			some -> 
-				Logger.error "#{__MODULE__} : unexpected data #{inspect(some)}"
-				receive_ans(condition, ttl, res)
-		after
-			ttl ->	
-				res
-		end
+	def exec(name, input, condition \\ fn(_) -> true end, ttl \\ 1000) when (is_binary(input) and is_atom(name) and is_function(condition, 1) and is_integer(ttl)) do
+		Portex.Worker.exec(name, input, condition, ttl)
 	end
 
 end
